@@ -924,8 +924,10 @@ def AnalyzeStatusManually(email=None, password=None):
             st.write(f"{'':<11} Total for {tower:<11}: {sum(activities.values()):>14}")
         st.write(f"Total Completed Activities: {output['total']}")
 
-    # Process COS data
     cos_data = []
+    # Dictionary to temporarily store UP-First Fix and CP-First Fix counts by tower
+    first_fix_counts = {}
+
     for tname, tower_data in [
         (st.session_state.cos_tname_tower4a, st.session_state.cos_df_tower4a),
         (st.session_state.cos_tname_tower4b, st.session_state.cos_df_tower4b),
@@ -935,6 +937,9 @@ def AnalyzeStatusManually(email=None, password=None):
             tower_data = tower_data.copy()
             tower_data['Actual Finish'] = pd.to_datetime(tower_data['Actual Finish'], errors='coerce')
             tower_data_filtered = tower_data[~pd.isna(tower_data['Actual Finish'])].copy()
+            
+            # Initialize dictionary for this tower
+            first_fix_counts[tname] = {}
             
             for activity in [
                 "EL-First Fix", "UP-First Fix", "CP-First Fix", "C-Gypsum and POP Punning",
@@ -948,7 +953,28 @@ def AnalyzeStatusManually(email=None, password=None):
                     "Activity Name": activity,
                     "Count": count
                 })
+                
+                # Store UP-First Fix and CP-First Fix counts for later use
+                if activity == "UP-First Fix" or activity == "CP-First Fix":
+                    first_fix_counts[tname][activity] = count
+
+    # Add sum of UP-First Fix and CP-First Fix as additional entries
+    for tname in first_fix_counts:
+        up_count = first_fix_counts[tname].get("UP-First Fix", 0)
+        cp_count = first_fix_counts[tname].get("CP-First Fix", 0)
+        
+        # Always add the values together
+        combined_count = up_count + cp_count
+        
+        # Add the entry
+        cos_data.append({
+            "Tower": tname,
+            "Activity Name": "Min. count of UP-First Fix and CP-First Fix",
+            "Count": combined_count
+        })
+
     cos_df = pd.DataFrame(cos_data)
+    
 
     # Log DataFrames for debugging
     logger.info(f"Asite DataFrame:\n{asite_df.to_string()}")
@@ -1415,6 +1441,8 @@ def generatePrompt(combined_data):
         logger.error(f"Error in WatsonX API call: {str(e)}")
         st.warning(f"Error in WatsonX API call: {str(e)}. Using fallback method to calculate totals.")
         return (combined_data)
+
+
 
 def extract_and_repair_json(text):
     """
@@ -1887,8 +1915,7 @@ def generate_consolidated_Checklist_excel(ai_data):
         cos_to_asite_mapping = {
             "EL-First Fix": "Wall Conducting",
             "Installation of doors": ["Door/Window Frame", "Door/Window Shutter"],  # Maps to two Asite activities
-            "UP-First Fix": "Plumbing Works",  # Will handle Plumbing Works separately
-            "CP-First Fix": "Plumbing Works",  # Will handle Plumbing Works separately
+            "Min. count of UP-First Fix and CP-First Fix": "Plumbing Works",  
             "Water Proofing Works": "Waterproofing - Sunken",
             "Gypsum & POP Punning": "POP & Gypsum Plaster",
             "Wall Tile": "Wall Tile",
